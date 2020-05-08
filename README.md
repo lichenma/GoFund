@@ -1,2 +1,2 @@
-# GoFundM-e-
+# GoFund
 Introductory Go Project
