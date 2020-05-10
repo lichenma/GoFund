@@ -277,10 +277,12 @@ Durable:    must get written to persistent storage
 ``` 
 
 
-> In order to deal with the CAP impossibility result two approaches dominate in practice. 
+> In order to deal with the CAP impossibility result two approaches dominate in practice. One ensures scalability by giving up consistency guarantees (Last - Writer - Wins approach). The alternative guarantees consistency by serialising all updates, which does not scale beyond a small cluster. Optimistic replication allows replicas to diverge, eventually resolving conflicts either by LWW - like methods or by serialisation. 
 
+> In some limited cases, a radical simplification is possible. If concurrent updates to some datum commute, and all of its replicates excutes all updates in causal order, then the replicas converge. We call this a Commutative Replicate Data Type (CRDT) - this approach ensures that there are no conflicts, hence, no need for consensus based concurrency control. CRDTs are not a univeral solution but can prove to be highly useful - ensures consistency in the large scale at a low costs. 
 
+> A trivial example of a CRDT is a set with a single add-element operation. A delete-element operation can be emulated by adding "deleted" elements to a second set. This suffices to implement a mailbox but is not practical as the data structures grow without bound
 
-
+> One non-trivial, useful and practical CRDT is one that implements an ordered set with insert-at-position and delete operations. It is called `Treedoc` because the sequence elements are identified compactly using a naming tree and because its first use was concurrent document editing
 
 
