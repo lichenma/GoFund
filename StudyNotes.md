@@ -236,7 +236,49 @@ Now in this case we are losing some of our withdrawls, as expected.
 
 ## Make it a Server 
 
-At this point we have various options. We can add an explicit mutex or read-write lock around the fund. We could use a compare - and - swap with a version number. We could go all out and use a `CRDT` (Commutative Replicated Data Type - a data type whose operations commute when they are concurrent) scheme ()
+At this point we have various options. We can add an explicit mutex or read-write lock around the fund. We could use a compare - and - swap with a version number. We could go all out and use a `CRDT` (Commutative Replicated Data Type - a data type whose operations commute when they are concurrent) scheme (perhaps replacing the `balance` field with lists of transactions for each client and calculating the balance from those). 
+
+
+### Side Investigation on CRDT 
+
+Commutative Replicated Data Types are a data type whose operations commute when they are concurrent. 
+
+From the book `CRDTs: Consistency without concurrency control` there is a nice concise overview of distributed consistency issues: 
+
+> Shared read-only data is easy to scale by using well-understood replication techniques. However, sharing mutable data at a large scale is a difficult problem because of the `CAP impossibility result`
+
+In theoretical computer science, the CAP theorem also named Brewer's theorem states that it is impossible for a distributed data store to simultaneously provide more than two of the following three guarantees 
+
+* **Consistency**: Every read receives the most recent write or an error 
+* **Availability**: Every request receives a (non-error) response, witout the guarantee that it contains the most recent write 
+* **Partition Tolerance**: The system continues to operate despite an arbitraty number of messages being dropped (or delayed) by the network between nodes 
+
+
+When a network partition failure happens should we decide to 
+
+- Cancel the operation and thus decrease the availability but ensure consistency
+- Proceed with the operation and thus provide availability but risk inconsistency 
+
+The CAP theorem implies that in the presence of network partition, one has to choose between consistency and avaialability. 
+
+
+``` 
+Note that the distributed CAP principles are different 
+from the ACID database transaction principles: 
+
+Atomic:     Must be complete in its entirety or have no 
+            effect whatsoever 
+
+Consistent: Must conform to existing constraints in the database
+
+Isolated:   Must not affect other transactions 
+
+Durable:    must get written to persistent storage 
+``` 
+
+
+> In order to deal with the CAP impossibility result two approaches dominate in practice. 
+
 
 
 
