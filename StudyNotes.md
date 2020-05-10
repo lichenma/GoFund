@@ -67,4 +67,50 @@ func (f *Fund) Withdraw(amount int){
 
 Next we need to a way to test `Fund`. Rather than writing a separate program, we will use Go's testing package which provides a framework for both unit tests and benchmarks. The simple logic in our `Fund` is not really worth writing unit tests for but since we will be talking a lot about concurrent access to the fund later on - it makes sense to write up a ***benchmark***. 
 
-> Benchmarks are like unit tests, but include a loop which runs the same code many times (in our case `fund.Withdraw(1)`). This allows the framework to time how long each iteration takes, 
+> Benchmarks are like unit tests, but include a loop which runs the same code many times (in our case `fund.Withdraw(1)`). This allows the framework to time how long each iteration takes, averaging out transient differences from disk seeks, cache misses, process scheduling, and other unpredicable factors. 
+
+The testing framework wants each benchmark to run for at least 1 second (by default). To ensure this, it will call the benchmark multiple times, passing in an increasing number of iterations value (`b.N`) each time until the run takes at least a second.
+
+For now, the benchmark will just deposit some money and then withdraw it one dollar at a time. 
+
+```go 
+// fund_test.go
+
+package funding 
+
+import "testing" 
+
+func BenchmarkFund(b *testing.B) {
+    // Add as much initial funding as we have iterations in the run 
+    fund := NewFund(b.N)
+
+    // Burn through them one at a time until they are all gone
+
+    for i := 0; i< b.N; i++ {
+        fund.Withdraw(1)
+    }
+
+    if fund.Balance() != 0 {
+        b.Error("Balance wasn't zero:", fund.Balance())
+    }
+}
+```
+
+
+Now we can run it: 
+
+```bash 
+$ go test -bench . funding 
+testing: warning: no tests to run 
+PASS 
+BenchmarkWithdrawls     20000000000     1.69 ns/op
+ok      funding     3.576s     
+```
+
+## Concurrent Access in Go 
+
+
+
+
+
+
