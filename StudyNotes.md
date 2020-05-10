@@ -100,7 +100,7 @@ func BenchmarkFund(b *testing.B) {
 Now we can run it: 
 
 ```bash 
-$ go test -bench . funding 
+$ go test -bench=.
 testing: warning: no tests to run 
 PASS 
 BenchmarkWithdrawls     20000000000     1.69 ns/op
@@ -109,6 +109,134 @@ ok      funding     3.576s
 
 ## Concurrent Access in Go 
 
+Now lets try making the benchmark concurrent, to model different users making withdrawls at the same time. In order to do that we will spawn ten goroutines and have each of them withdraw on tenth of the money 
+
+
+`Goroutines` are the basic building block for concurrency in the Go language. They are green threads - lightweight threads managed by the Go runtime, not by the operating system. This means that you can run thousands (or millions) of them without any significant overhead. Goroutines are spawned with the `go` keyword, and always start with a function (or method call): 
+
+```go 
+// returns immediately, without waiting for `DoSomething()` to complete
+go DoSomething()
+```
+
+Often, we want to spawn off a short one-time function with just a few lines of code. In this case we can use a closure instead of a function name: 
+
+```go 
+go func() {
+    // do stuff ...
+}() // Must be a function call --> ()
+```
+
+Once all of our goroutines are spawned, we need a way to wait for them to finish. We could one ourselves using `channels`, but for now we will just use the `WaitGroup` type in Go's standard library, which exists for this very purpose. We will create one (called `wg`) and call `wg.Add(1)` before spawning each worker, to keep track of how many there are. Then the workers will report back using `wg.Done()`. Meanwhile in the main goroutine, we can just say `wg.Wait()` to block until every worker has finished. 
+
+Inside the worker goroutines in our next example, we will use `defer` to call `wg.Done()`. 
+
+`defer` takes a function (or method) call and runs it immediately before the current function returns and after everything else is done. This is handy for cleanup: 
+
+```go 
+func() {
+    resource.Lock()
+    defer resouce.Unlock()
+
+    // Do stuff with the resource
+}()
+```
+
+This way we can easily match the `Unlock` with its `Lock` for readability. More importantly, a deferred function will run even if there is a panic in the main function (soemthing usually handled via try-finally/ensure in other languages)
+
+
+Lastly, deferred functions will execute in the ***reverse*** (like a stack) order to which they were called, meaning we can do a nested cleanup nicely (similar to the C idiom of nested `goto`s and `label`s but much neater)
+
+
+```go 
+func() {
+    db.Connect()
+    defer db.Disconnect()
+
+    // If Begin panics, only db.Disconnect() will execute
+    transaction.Begin()
+    defer transaction.Close()
+
+    // From here on transaction.Close() will run before db.Disconnect()
+}()
+```
+
+With these functions, here is the new implementation: 
+
+```go 
+// fund_test.go
+
+package funding 
+
+import (
+    "sync" 
+    "testing" 
+)
+
+const WORKERS = 10 
+
+func BenchmarkWithdrawls(b *testing.B) {
+    // Skip N = 1 
+    if b.N < WORKERS {
+        return 
+    }
+
+    // Add as many dollars as we have iterations this run 
+    fund := NewFund(b.N)
+
+    // assume b.N divides cleanly (what happens with division in golang?)
+    dollarsPerFounder := b.N / WORKERS 
+
+    // WaitGroup structs do not need to be initialized we can just delare one and then use it
+    var wg sync.WaitGroup 
+
+    for i := 0; i < WORKERS; i++ {
+        // let the waitgroup know that we are adding a goroutine
+        wg.Add(1)
+
+        // Spawn off a founder worker, as a closure 
+        go func() {
+            // Mark this worker done when the function finishes
+            defer wg.Done()
+
+            for i := 0; i < dollarsPerFounder; i++ {
+                fund.Withdraw(1)
+            }
+        }() // Remember to call the closure
+    }
+
+    // Wait for all the workers to finish 
+    wg.Wait()
+
+    if fund.Balance() != 0 {
+        b.Error("Balance wasn't zero:", fund.Balance())
+    }
+} 
+```
+
+We can estimate what will happen given these test conditions - the workers will execute `withdraw` on top of each other. Inside it, `f.balance -= amount` will read the balance, subtract one, and then write it back. But sometimes two or more workers will both read the same balance, and do the same subtraction, and we end up with the wrong total ... right? 
+
+When we run the program we see that it still passes - remember that goroutines are `green threads`: managed by the Go runtime not the Operating System. The runtime schedules goroutines across however many OS threads it has available. At the time the tutorial was created - Go does not try to guess how many OS threads it should use and we want more than one we have to specify so. Finally the current runtime does not preempt (interrupt a task being carried out, without requiring its cooperation and with the intention of resuming the task at a later time) goroutines - a goroutine will continue to run until it does something that suggests its ready for a break (like interacting with a channel). 
+
+All of this means that our benchmark is now concurrent but it is not **parallel**. Only one of our workers will run at a time, and it will run until it is done. We can change this by telling Go to use more threads, via the `GOMAXPROCS` environment variable. 
+
+```bash 
+$ GOMAXPROCS=4 go test -bench=.
+goos: darwin
+goarch: amd64
+BenchmarkWithdrawls-4   	--- FAIL: BenchmarkWithdrawls-4
+    fund_test.go:44: Balance wasn't zero: 2409
+FAIL
+exit status 1
+FAIL	_/Users/lichenma/Projects/GoFund/GoFund	0.265s
+```
+
+Now in this case we are losing some of our withdrawls, as expected. 
+
+
+## Make it a Server 
+
+At this point we have various options. We can add an explicit mutex or read-write lock around the fund. We could use a compare - and - swap with a version number. We could go all out and use a `CRDT` (Commutative Replicated Data Type - a data type whose operations commute when they are concurrent) scheme ()
 
 
 
