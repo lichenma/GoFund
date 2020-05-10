@@ -286,3 +286,15 @@ Durable:    must get written to persistent storage
 > One non-trivial, useful and practical CRDT is one that implements an ordered set with insert-at-position and delete operations. It is called `Treedoc` because the sequence elements are identified compactly using a naming tree and because its first use was concurrent document editing
 
 
+## Make it a Server (continued)
+
+We could go all out and use a CRDT scheme perhaps replacing the `balance` field with lists of transactions for each client and calculating the balance from those. 
+
+For the purposes of this tutorial we will not attempt any of them now because they are messy or scary or both. Instead we will decide that the fund should be a `server` ... what is a server? It is something that you talk to and in golang things talk via channels. 
+
+
+> Channels are the basic communication mechanism between goroutines (seems to be like a pipe from Waterloo OS course)
+
+Values sent to the channel (with `channel <- value`), and can be received on the other side (with `value = <- channel`). Channels are "goroutine safe" meaning that any number of goroutines can send to and receive from them at the same time. 
+
+By default, Go channels are ***unbuffered***. This means that sending a value 
