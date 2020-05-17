@@ -297,4 +297,26 @@ For the purposes of this tutorial we will not attempt any of them now because th
 
 Values sent to the channel (with `channel <- value`), and can be received on the other side (with `value = <- channel`). Channels are "goroutine safe" meaning that any number of goroutines can send to and receive from them at the same time. 
 
-By default, Go channels are ***unbuffered***. This means that sending a value 
+By default, Go channels are ***unbuffered***. This means that sending a value to a channel will block until another goroutine is ready to receive it immediately. Go also supports fixed buffer sizes for channels (using `make(chan someType, bufferSize)`). An unbuffered channel provides a guarantee that an exchange between two goroutines is performed at the instant the send and receive take place - buffered channel has no such guarantee. Data are passed around on channels such that only one goroutine has access to a data item at any given time - data races cannot occur by design. An unbuffered channel is used to perform synchronous communication between goroutines while a buffered channel is used to perform asynchronous communication. However, for normal use this is ususally not the way to go. 
+
+
+
+#### Buffering 
+
+Buffering communication channels can be a performance optimization in certain circumstances, but it should be used with great care (and benchmarking). 
+
+There are uses for buffered channels which aren't directly about communication. For example, a common throttling idiom creates a channel with (for example) buffer size `10` and then sends ten tokens into it immediately. Any number of worker goroutines are then spawned and each receives a token from the channel before starting work, and sends it back afterward. Then, however many workers there are, only ten will ever be working at the same time. 
+
+
+
+
+<br>
+
+
+
+Imagine a webserver for our fund, where each request makes a withdrawal. When things are very busy, the `FundServer` won't be able to keep up, and requests trying to send to its command channel will start to block and wait. At that point we can enforce a maximum
+
+
+
+
+Imagine a webserver 
