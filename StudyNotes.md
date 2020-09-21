@@ -40,7 +40,7 @@ Go is deliberates **not** an object-oriented language: There are no classes, obj
 package funding 
 
 type Fund struct {
-    // balanace is unexported (private), because it is lowercase 
+    // balance is unexported (private), because it is lowercase 
     balance int
 }
 
@@ -127,7 +127,7 @@ go func() {
 }() // Must be a function call --> ()
 ```
 
-Once all of our goroutines are spawned, we need a way to wait for them to finish. We could one ourselves using `channels`, but for now we will just use the `WaitGroup` type in Go's standard library, which exists for this very purpose. We will create one (called `wg`) and call `wg.Add(1)` before spawning each worker, to keep track of how many there are. Then the workers will report back using `wg.Done()`. Meanwhile in the main goroutine, we can just say `wg.Wait()` to block until every worker has finished. 
+Once all of our goroutines are spawned, we need a way to wait for them to finish. We could build one ourselves using `channels`, but for now we will just use the `WaitGroup` type in Go's standard library, which exists for this very purpose. We will create one (called `wg`) and call `wg.Add(1)` before spawning each worker, to keep track of how many there are. Then the workers will report back using `wg.Done()`. Meanwhile in the main goroutine, we can just say `wg.Wait()` to block until every worker has finished. 
 
 Inside the worker goroutines in our next example, we will use `defer` to call `wg.Done()`. 
 
@@ -216,7 +216,7 @@ func BenchmarkWithdrawls(b *testing.B) {
 
 We can estimate what will happen given these test conditions - the workers will execute `withdraw` on top of each other. Inside it, `f.balance -= amount` will read the balance, subtract one, and then write it back. But sometimes two or more workers will both read the same balance, and do the same subtraction, and we end up with the wrong total ... right? 
 
-When we run the program we see that it still passes - remember that goroutines are `green threads`: managed by the Go runtime not the Operating System. The runtime schedules goroutines across however many OS threads it has available. At the time the tutorial was created - Go does not try to guess how many OS threads it should use and we want more than one we have to specify so. Finally the current runtime does not preempt (interrupt a task being carried out, without requiring its cooperation and with the intention of resuming the task at a later time) goroutines - a goroutine will continue to run until it does something that suggests its ready for a break (like interacting with a channel). 
+When we run the program we see that it still passes - remember that goroutines are `green threads`: managed by the Go runtime not the Operating System. The runtime schedules goroutines across however many OS threads it has available. At the time the tutorial was created - Go does not try to guess how many OS threads it should use and if we want more than one we have to specify so. Finally the current runtime does not preempt (interrupt a task being carried out, without requiring its cooperation and with the intention of resuming the task at a later time) goroutines - a goroutine will continue to run until it does something that suggests its ready for a break (like interacting with a channel). 
 
 All of this means that our benchmark is now concurrent but it is not **parallel**. Only one of our workers will run at a time, and it will run until it is done. We can change this by telling Go to use more threads, via the `GOMAXPROCS` environment variable. 
 
@@ -259,7 +259,7 @@ When a network partition failure happens should we decide to
 - Cancel the operation and thus decrease the availability but ensure consistency
 - Proceed with the operation and thus provide availability but risk inconsistency 
 
-The CAP theorem implies that in the presence of network partition, one has to choose between consistency and avaialability. 
+The CAP theorem implies that in the presence of network partition, one has to choose between consistency and availability. 
 
 
 ``` 
@@ -305,7 +305,7 @@ By default, Go channels are ***unbuffered***. This means that sending a value to
 
 Buffering communication channels can be a performance optimization in certain circumstances, but it should be used with great care (and benchmarking). 
 
-An unbuffered channel provides a guarantee that an exchange between two goroutines is performed at the instant the send and receive take place - buffered channel has no such guarantee. Data are passed around on channels such that only one goroutine has access to a data item at any given time - data races cannot occur by design. An unbuffered channel is used to perform synchronous communication between goroutines while a buffered channel is used to perform asynchronous communication.
+An unbuffered channel provides a guarantee that an exchange between two goroutines is performed at the instant the send and receive take place - buffered channel has no such guarantee. Data are passed around on channels such that only one goroutine has access to a data item at any given time - data races cannot occur by design. An unbuffered channel is used to perform `synchronous communication` between goroutines while a buffered channel is used to perform `asynchronous communication`.
 
 There are uses for buffered channels which aren't directly about communication. For example, a common throttling idiom creates a channel with (for example) buffer size `10` and then sends ten tokens into it immediately. Any number of worker goroutines are then spawned and each receives a token from the channel before starting work, and sends it back afterward. Then, however many workers there are, only ten will ever be working at the same time. 
 
@@ -319,4 +319,21 @@ There are uses for buffered channels which aren't directly about communication. 
 Imagine a webserver for our fund, where each request makes a withdrawal. When things are very busy, the `FundServer` won't be able to keep up, and requests trying to send to its command channel will start to block and wait. At that point we can enforce a maximum request count in the server, and return a sensible error code (like a `503 Service Unavailable`) to clients over that limit. This is the best behavior possible when the server is overloaded. 
 
 
-Adding buffering to our channels would make this behavior less deterministic. We could easily end up with long queues of unprocessed commands
+Adding buffering to our channels would make this behavior less deterministic. We could easily end up with long queues of unprocessed commands based on information the client saw much earlier (and perhaps for requests which had since timed out upstream). The same applies in many other situations like applying backpressure over TCP when the receiver can't keep up with the sender. 
+
+For the purposes of this Go example, we will stick with default unbuffered behavior. 
+
+We will use a channel to send commands to the `FundServer`. Every benchmark worker will send commands to the channel, but only the server will receive them. 
+
+We could makes the changes to the Fund type directly but that would make things messy and combine concurrency handling and business logic all in that class. Instead we will leave the Fund type as it is and make `FundServer` a separate wrapper around it. 
+
+This wrapper will contain a main loop which waits for commands, and responds to them in turn. 
+
+
+## Interfaces 
+
+At this point, we want to send several commands (Withdraw, Balance) each with their own struct type. The server should be able to respond to any of them - this behavior is usually achieved in OOP language through polymorphism: superclass and subclass definitions for each different struct input. In Go, the method of choice is `interfaces`. 
+
+> Note: We could have made our commands channel take pointers to commands (`chan *TransactionCommand`) so why was this approach not used? Passing pointer between goroutines is risky since both goroutines might modify it. It is often less efficient since the other routine may be running on a different CPU core (increasing cache invalidation). When possible - pass plain values 
+
+An interface is a set of method signatures. Any type that implements all of the methods can be treated as that interface (without requiring formal declaration). 
