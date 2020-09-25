@@ -336,4 +336,80 @@ At this point, we want to send several commands (Withdraw, Balance) each with th
 
 > Note: We could have made our commands channel take pointers to commands (`chan *TransactionCommand`) so why was this approach not used? Passing pointer between goroutines is risky since both goroutines might modify it. It is often less efficient since the other routine may be running on a different CPU core (increasing cache invalidation). When possible - pass plain values 
 
-An interface is a set of method signatures. Any type that implements all of the methods can be treated as that interface (without requiring formal declaration). 
+An interface is a set of method signatures. Any type that implements all of the methods can be treated as that interface (without requiring formal declaration). In our first implementation we will use command structs which implement the empty interface, `interface{}`. Since there are no requirements, any value can be treated as that interface. Clearly this is not ideal - we should only accept command structs - but we will revisit this later. 
+
+The scaffolding for the Go server will look like this: 
+
+```go 
+// server.go 
+package funding 
+
+type FundServer struct {
+    Commands chan interface{}
+    fund Fund
+}
+
+func NewFundServer(initialBalance int) *FundServer {
+    server := &FundServer{
+        // make() creates builtin like channels, maps and slices 
+        Commands: make(chan interface{}),
+        fund: NewFund(initialBalance),
+    }
+
+    // spawn the server main loop immediately
+    go server.loop()
+    return server
+}
+
+func (s *FundServer) loop() {
+    // built-in range clause can iterate over channels 
+    for command := range s.Commands {
+        // Handle the command
+    }
+}
+
+```
+
+Now let's introduce some Golang struct types for the commands: 
+
+```go 
+type WithdrawCommand struct {
+    Amount int
+}
+
+type BalanceCommand struct {
+    Response chan int
+}
+```
+
+The `WithdrawCommand` contains only the amount to withdraw. Meanwhile the `BalanceCommand` has a response, so it includes the channel to send it on. This will ensure that the responses will always end up going to the right place even if the fund decides to respond out-of-order. 
+
+Now we can write up the server's main loop:
+
+```go 
+func (s *FundServer) loop() {
+    for comand := range s.Commands {
+
+        // command is just an interface{} but we can check its corresponding type
+        switch command.(type) {
+            case WithdrawCommand: 
+                // use a "type assertion" 
+                withdrawl := command.(WithdrawCommand)
+                s.fund.Withdraw(withdrawal.Amount)
+            
+            case BalanceCommand: 
+                getBalance := command.(BalanceCommand)
+                balance := s.fund.Balance()
+                getBalance.Response <- balance
+            
+            default: 
+                panic(fmt.Sprintf("Unrecognized Command: %v", command))
+        }
+    }
+}
+```
+
+The code written is kind of ugly but lets try running the benchmark: 
+
+
+
